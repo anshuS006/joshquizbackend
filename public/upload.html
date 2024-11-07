@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Management</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        input[type="file"], select, input[type="date"], input[type="number"], input[type="text"], button {
+            margin: 10px 0;
+            padding: 8px;
+            font-size: 16px;
+        }
+        #response-message, #questions-response, #add-category-response, #quiz-id-display, #quiz-questions-response, #search-questions-response {
+            margin-top: 20px;
+            color: green;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <!-- Fetch Questions by Quiz ID -->
+    <h2>Fetch Questions by Quiz ID</h2>
+    <form id="fetch-questions-by-quiz-id-form">
+        <input type="text" id="quiz-id-input" placeholder="Quiz ID" required />
+        <button type="submit">Fetch Questions</button>
+    </form>
+    <div id="quiz-questions-response"></div>
+
+    <!-- Upload Question Excel File -->
+    <h1>Upload Question Excel File</h1>
+    <form id="upload-form">
+        <input type="text" id="quiz-name" placeholder="Quiz Name" required />
+        <input type="text" id="quiz-description" placeholder="Quiz Description (optional)" />
+        <input type="file" id="file-input" accept=".xlsx, .xls" required />
+        <button type="submit">Upload</button>
+    </form>
+    <div id="response-message"></div>
+    <div id="quiz-id-display"></div> <!-- Display the generated quiz_id -->
+
+    <!-- Add New Category -->
+    <h2>Add New Category</h2>
+    <form id="add-category-form">
+        <input type="number" id="category-id" placeholder="Category ID" required />
+        <input type="text" id="category-name" placeholder="Category Name" required />
+        <button type="submit">Add Category</button>
+    </form>
+    <div id="add-category-response"></div>
+
+    <!-- Fetch Questions by Category and Date -->
+    <h2>Fetch Questions by Category and Date</h2>
+    <form id="fetch-form">
+        <select id="category-select" required>
+            <option value="" disabled selected>Select Category</option>
+            <!-- Categories will be populated here dynamically -->
+        </select>
+        <input type="date" id="question-date" required />
+        <button type="submit">Fetch Questions</button>
+    </form>
+    <div id="questions-response"></div>
+
+    <!-- Search Questions by Quiz ID -->
+    <h2>Search Questions</h2>
+    <form id="search-questions-form">
+        <label for="search-quiz-id">Quiz ID:</label>
+        <input type="number" id="search-quiz-id" placeholder="Quiz ID" required />
+        
+        <button type="submit">Search</button>
+    </form>
+    <div id="search-questions-response"></div>
+
+    <!-- Table to display Excel content -->
+    <h2>Uploaded Excel File Content</h2>
+    <table id="excel-table">
+        <thead id="table-head"></thead>
+        <tbody id="table-body"></tbody>
+    </table>
+
+    <!-- Add the SheetJS library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <script>
+        let existingCategories = []; // To store existing categories
+
+        // Fetch categories from the API and populate the dropdown
+        async function fetchCategories() {
+            try {
+                const response = await fetch('http://localhost:3000/categories/list');
+                const categories = await response.json();
+
+                if (response.ok) {
+                    existingCategories = categories.map(category => category.category_id); // Store existing category IDs
+                    const categorySelect = document.getElementById('category-select');
+                    categorySelect.innerHTML = ''; // Clear existing options
+                    const defaultOption = document.createElement('option');
+                    defaultOption.value = "";
+                    defaultOption.disabled = true;
+                    defaultOption.selected = true;
+                    defaultOption.textContent = "Select Category";
+                    categorySelect.appendChild(defaultOption);
+                    categories.forEach(category => {
+                        const option = document.createElement('option');
+                        option.value = category.category_id; // Use category_id as the value
+                        option.textContent = category.category_name; // Display category_name
+                        categorySelect.appendChild(option);
+                    });
+                } else {
+                    console.error('Failed to fetch categories:', categories.error);
+                }
+            } catch (error) {
+                console.error('Error fetching categories:', error);
+            }
+        }
+
+        // Call fetchCategories when the page loads
+        window.onload = fetchCategories;
+
+        // Handle Excel file upload
+        document.getElementById('upload-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const quizName = document.getElementById('quiz-name').value.trim();
+            const quizDescription = document.getElementById('quiz-description').value.trim();
+            const fileInput = document.getElementById('file-input');
+            const file = fileInput.files[0];
+
+            // Validate inputs
+            if (!quizName) {
+                document.getElementById('response-message').textContent = 'Please provide a valid quiz name.';
+                document.getElementById('response-message').classList.remove('error');
+                return;
+            }
+
+            if (!file) {
+                document.getElementById('response-message').textContent = 'Please select an Excel file.';
+                document.getElementById('response-message').classList.remove('error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('quiz_name', quizName);
+            if (quizDescription) {
+                formData.append('quiz_description', quizDescription);
+            }
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('http://localhost:3000/questions/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    console.log(result.message);
+                    console.log(result.quiz_id);
+                    document.getElementById('response-message').textContent = 'Upload successful: ' + result.message;
+                    document.getElementById('response-message').classList.remove('error');
+                    document.getElementById('quiz-id-display').textContent = 'Generated Quiz ID: ' + result.quiz_id; // Display the generated quiz_id
+                } else {
+                    document.getElementById('response-message').textContent = 'Upload failed: ' + result.error;
+                    document.getElementById('response-message').classList.add('error');
+                    document.getElementById('quiz-id-display').textContent = ''; // Clear the quiz ID display on error
+                }
+
+                // Read the Excel file and display its content
+                displayExcelContent(file);
+
+            } catch (error) {
+                document.getElementById('response-message').textContent = 'Error: ' + error.message;
+                document.getElementById('response-message').classList.add('error');
+            }
+        });
+
+        // Read and display the Excel file content
+        function displayExcelContent(file) {
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                renderTable(jsonData);
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Render Excel data into an HTML table
+        function renderTable(data) {
+            const tableHead = document.getElementById('table-head');
+            const tableBody = document.getElementById('table-body');
+
+            tableHead.innerHTML = '';
+            tableBody.innerHTML = '';
+
+            if (data.length > 0) {
+                const headers = data[0];
+                const headerRow = document.createElement('tr');
+
+                headers.forEach(header => {
+                    const th = document.createElement('th');
+                    th.textContent = header;
+                    headerRow.appendChild(th);
+                });
+
+                tableHead.appendChild(headerRow);
+
+                data.slice(1).forEach(row => {
+                    const tableRow = document.createElement('tr');
+                    row.forEach(cell => {
+                        const td = document.createElement('td');
+                        td.textContent = cell || '';  // Handle empty cells
+                        tableRow.appendChild(td);
+                    });
+
+                    tableBody.appendChild(tableRow);
+                });
+            }
+        }
+
+        // Handle Fetch Questions by Category and Date form submission
+        document.getElementById('fetch-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const categoryId = document.getElementById('category-select').value;
+            const questionDate = document.getElementById('question-date').value;
+
+            try {
+                const response = await fetch(`http://localhost:3000/questions/findByDateAndCategory?categoryId=${categoryId}&questionDate=${questionDate}`);
+                const questions = await response.json();
+
+                if (response.ok) {
+                    displayQuestions(questions, 'questions-response');
+                } else {
+                    document.getElementById('questions-response').textContent = 'Fetch failed: ' + (questions.error || questions.message);
+                }
+
+            } catch (error) {
+                document.getElementById('questions-response').textContent = 'Error: ' + error.message;
+            }
+        });
+
+        // Display fetched questions in a table
+        function displayQuestions(questions, elementId) {
+            const questionsResponse = document.getElementById(elementId);
+            questionsResponse.innerHTML = ''; // Clear previous content
+
+            if (questions.length === 0) {
+                questionsResponse.textContent = 'No questions found for this date and category.';
+                return;
+            }
+
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+
+            const headers = Object.keys(questions[0]);
+            const headerRow = document.createElement('tr');
+
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                headerRow.appendChild(th);
+            });
+
+            thead.appendChild(headerRow);
+
+            questions.forEach(question => {
+                const row = document.createElement('tr');
+                headers.forEach(header => {
+                    const td = document.createElement('td');
+                    td.textContent = question[header];
+                    row.appendChild(td);
+                });
+                tbody.appendChild(row);
+            });
+
+            table.appendChild(thead);
+            table.appendChild(tbody);
+            questionsResponse.appendChild(table);
+        }
+
+        // Handle Add Category form submission
+        document.getElementById('add-category-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const categoryId = document.getElementById('category-id').value;
+            const categoryName = document.getElementById('category-name').value;
+
+            // Check if the category ID already exists
+            if (existingCategories.includes(parseInt(categoryId))) {
+                document.getElementById('add-category-response').textContent = 'Category ID already exists. Please enter a unique ID.';
+                document.getElementById('add-category-response').classList.remove('error');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:3000/categories/add', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        categoryId: parseInt(categoryId), // Convert to integer
+                        categoryName: categoryName
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('add-category-response').textContent = 'Category added successfully: ' + result.message;
+                    document.getElementById('add-category-response').classList.remove('error');
+                    // Refresh categories dropdown after adding new category
+                    fetchCategories(); 
+                } else {
+                    document.getElementById('add-category-response').textContent = 'Failed to add category: ' + (result.error || result.message);
+                    document.getElementById('add-category-response').classList.add('error');
+                }
+            } catch (error) {
+                document.getElementById('add-category-response').textContent = 'Error: ' + error.message;
+                document.getElementById('add-category-response').classList.add('error');
+            }
+        });
+
+        // Handle Fetch Questions by Quiz ID form submission
+        document.getElementById('fetch-questions-by-quiz-id-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const quizIdInput = document.getElementById('quiz-id-input').value.trim();
+
+            // Ensure quizId is a number
+            const quizId = Number(quizIdInput);
+            if (isNaN(quizId)) {
+                document.getElementById('quiz-questions-response').textContent = 'Quiz ID must be a valid number.';
+                document.getElementById('quiz-questions-response').classList.add('error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`http://localhost:3000/questions/search?quiz_id=${quizId}`);
+                const result = await response.json();
+                if (response.ok) {
+                    displayQuestions(result, 'quiz-questions-response'); // Display fetched questions
+                    document.getElementById('quiz-questions-response').classList.remove('error');
+                } else {
+                    document.getElementById('quiz-questions-response').textContent = result.message || result.error;
+                    document.getElementById('quiz-questions-response').classList.add('error');
+                }
+            } catch (error) {
+                console.error('Error fetching questions:', error);
+                document.getElementById('quiz-questions-response').textContent = 'Error fetching questions';
+                document.getElementById('quiz-questions-response').classList.add('error');
+            }
+        });
+
+        // Handle Search Questions form submission
+        document.getElementById('search-questions-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const searchQuizIdInput = document.getElementById('search-quiz-id').value.trim();
+
+            // Validate Quiz ID
+            if (!searchQuizIdInput) {
+                document.getElementById('search-questions-response').textContent = 'Please enter a Quiz ID.';
+                document.getElementById('search-questions-response').classList.add('error');
+                return;
+            }
+
+            const quizId = Number(searchQuizIdInput);
+            if (isNaN(quizId)) {
+                document.getElementById('search-questions-response').textContent = 'Quiz ID must be a valid number.';
+                document.getElementById('search-questions-response').classList.add('error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`http://localhost:3000/questions/search?quiz_id=${quizId}`);
+                const result = await response.json();
+                if (response.ok) {
+                    displayQuestions(result, 'search-questions-response');
+                    document.getElementById('search-questions-response').classList.remove('error');
+                } else {
+                    document.getElementById('search-questions-response').textContent = result.message || result.error;
+                    document.getElementById('search-questions-response').classList.add('error');
+                }
+            } catch (error) {
+                console.error('Error searching questions:', error);
+                document.getElementById('search-questions-response').textContent = 'Error searching questions';
+                document.getElementById('search-questions-response').classList.add('error');
+            }
+        });
+
+        // Function to display questions in a table
+        function displayQuestions(questions, elementId) {
+            const container = document.getElementById(elementId);
+            container.innerHTML = ''; // Clear previous content
+
+            if (questions.length === 0) {
+                container.textContent = 'No questions found for the specified criteria.';
+                return;
+            }
+
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+
+            const headers = Object.keys(questions[0]);
+            const headerRow = document.createElement('tr');
+
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                headerRow.appendChild(th);
+            });
+
+            thead.appendChild(headerRow);
+
+            questions.forEach(question => {
+                const row = document.createElement('tr');
+                headers.forEach(header => {
+                    const td = document.createElement('td');
+                    td.textContent = question[header];
+                    row.appendChild(td);
+                });
+                tbody.appendChild(row);
+            });
+
+            table.appendChild(thead);
+            table.appendChild(tbody);
+            container.appendChild(table);
+        }
+    </script>
+</body>
+</html>
